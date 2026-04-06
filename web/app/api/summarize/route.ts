@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { chunkTextForEmbedding } from "@/lib/chunkText";
 import {
   defaultEmbeddingModel,
+  deleteGrantOsEmbeddingsForSource,
   embedText,
   upsertGrantOsEmbedding,
 } from "@/lib/grantOsEmbeddings";
@@ -14,6 +16,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_BYTES = 12 * 1024 * 1024;
+const MAX_EMBEDDING_CHUNKS = 48;
 
 export async function POST(request: Request) {
   const key = process.env.OPENAI_API_KEY;
@@ -96,15 +99,22 @@ export async function POST(request: Request) {
         console.error("[supabase] pdf_analyses insert failed:", dbError.message);
       } else if (inserted?.id) {
         try {
-          const embedding = await embedText(key, summary, defaultEmbeddingModel());
-          const { error: embError } = await upsertGrantOsEmbedding(admin, {
-            sourceType: "pdf_analysis",
-            sourceId: inserted.id,
-            content: summary,
-            embedding,
-          });
-          if (embError) {
-            console.error("[supabase] grant_os_embeddings upsert failed:", embError);
+          const model = defaultEmbeddingModel();
+          const chunks = chunkTextForEmbedding(text).slice(0, MAX_EMBEDDING_CHUNKS);
+          await deleteGrantOsEmbeddingsForSource(admin, "pdf_analysis", inserted.id);
+          for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i]!;
+            const embedding = await embedText(key, chunk, model);
+            const { error: embError } = await upsertGrantOsEmbedding(admin, {
+              sourceType: "pdf_analysis",
+              sourceId: inserted.id,
+              chunkIndex: i,
+              content: chunk,
+              embedding,
+            });
+            if (embError) {
+              console.error("[supabase] grant_os_embeddings upsert failed:", embError);
+            }
           }
         } catch (e) {
           console.error("[embeddings] pdf_analysis:", e instanceof Error ? e.message : e);

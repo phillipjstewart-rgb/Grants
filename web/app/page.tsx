@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { semanticSearchAction } from "@/app/actions/semanticSearch";
+import type { SemanticSearchHit } from "@/types/semanticSearch";
+
 type ApiOk = {
   filename: string;
   extractedChars: number;
@@ -22,13 +25,6 @@ type GrantRow = {
   high_priority: boolean;
 };
 
-type SearchHit = {
-  source_type: string;
-  source_id: string;
-  content: string;
-  similarity: number;
-};
-
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -46,7 +42,7 @@ export default function Home() {
   const [searchType, setSearchType] = useState<"all" | "grant_opportunity" | "pdf_analysis">("all");
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [searchResults, setSearchResults] = useState<SearchHit[] | null>(null);
+  const [searchResults, setSearchResults] = useState<SemanticSearchHit[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,14 +115,12 @@ export default function Home() {
       }
       setSearchLoading(true);
       try {
-        const params = new URLSearchParams({ q, limit: "12", type: searchType });
-        const res = await fetch(`/api/search?${params.toString()}`);
-        const data = (await res.json()) as { results?: SearchHit[]; error?: string };
-        if (!res.ok) {
-          setSearchError(data.error ?? "Search failed.");
+        const data = await semanticSearchAction({ q, limit: 12, type: searchType });
+        if (!data.ok) {
+          setSearchError(data.error);
           return;
         }
-        setSearchResults(data.results ?? []);
+        setSearchResults(data.results);
       } catch {
         setSearchError("Network error — try again.");
       } finally {

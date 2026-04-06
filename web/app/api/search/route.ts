@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import {
-  embedText,
-  matchGrantOsEmbeddings,
-  type GrantOsEmbeddingSource,
-} from "@/lib/grantOsEmbeddings";
-import { getSupabaseAdmin } from "@/lib/supabase/serverAdmin";
+import { clientIp, isRateLimited } from "@/lib/rateLimit";
+import { runSemanticSearch } from "@/lib/runSemanticSearch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,21 +13,23 @@ const querySchema = z.object({
   type: z.enum(["grant_opportunity", "pdf_analysis", "all"]).optional().default("all"),
 });
 
+function searchApiAuthorized(request: Request): boolean {
+  const secret = process.env.SEARCH_API_KEY?.trim();
+  if (!secret) return true;
+  const auth = request.headers.get("authorization");
+  if (auth === `Bearer ${secret}`) return true;
+  return request.headers.get("x-search-key") === secret;
+}
+
 export async function GET(request: Request) {
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) {
-    return NextResponse.json(
-      { error: "OPENAI_API_KEY is not configured on the server." },
-      { status: 500 }
-    );
+  if (!searchApiAuthorized(request)) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const admin = getSupabaseAdmin();
-  if (!admin) {
-    return NextResponse.json(
-      { error: "Supabase is not configured (missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY)." },
-      { status: 503 }
-    );
+  const perMin = Number(process.env.SEARCH_RATE_LIMIT_PER_MIN ?? "30");
+  const limitPerWindow = Number.isFinite(perMin) && perMin > 0 ? perMin : 30;
+  if (isRateLimited(`search-api:${clientIp(request)}`, limitPerWindow, 60_000)) {
+    return NextResponse.json({ error: "Too many search requests. Try again shortly." }, { status: 429 });
   }
 
   const { searchParams } = new URL(request.url);
@@ -41,33 +39,16 @@ export async function GET(request: Request) {
     type: searchParams.get("type") ?? undefined,
   });
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid query: provide q= (1–2000 chars), optional limit (1–20), type." }, { status: 400 });
-  }
-
-  const { q, limit, type } = parsed.data;
-  const filterType: GrantOsEmbeddingSource | null =
-    type === "all" ? null : (type as GrantOsEmbeddingSource);
-
-  let queryEmbedding: number[];
-  try {
-    queryEmbedding = await embedText(openaiKey, q);
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Embedding request failed.";
-    return NextResponse.json({ error: message }, { status: 502 });
-  }
-
-  const { data, error } = await matchGrantOsEmbeddings(admin, queryEmbedding, limit, filterType);
-  if (error) {
     return NextResponse.json(
-      {
-        error:
-          error.includes("match_grant_os_embeddings") || error.includes("function")
-            ? "Search RPC missing — apply migration supabase/migrations/20260406150000_grant_os_pgvector_embeddings.sql"
-            : error,
-      },
-      { status: 500 }
+      { error: "Invalid query: provide q= (1–2000 chars), optional limit (1–20), type." },
+      { status: 400 }
     );
   }
 
-  return NextResponse.json({ results: data ?? [] });
+  const out = await runSemanticSearch(parsed.data);
+  if (!out.ok) {
+    return NextResponse.json({ error: out.error }, { status: out.status });
+  }
+
+  return NextResponse.json({ results: out.results });
 }
