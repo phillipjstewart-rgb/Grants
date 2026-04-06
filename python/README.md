@@ -20,6 +20,7 @@ Console entry points:
 | `grant-draft` | Claude formal response letter (markdown) from matrix + page refs |
 | `grant-remediate` | Interactive gap remediation → `remediated_sections.json` |
 | `grant-pdf` | ReportLab branded PDF from remediated JSON |
-| `grant-graph` | LangGraph supervisor demo (USASpending + writer + auditor) |
+| `grant-pdf-worker` | Batch `*.json` jobs in a folder → PDFs (`processed/` / `failed/`) |
+| `grant-graph` | LangGraph supervisor demo (USASpending + writer + auditor + PDF export) |
 
 Run with `--help` on each command for flags.
