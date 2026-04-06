@@ -56,6 +56,8 @@ export default function DocumentAnalyzerClient() {
       const data = (await res.json()) as {
         sessionId?: string;
         filename?: string;
+        chunkCount?: number;
+        persisted?: boolean;
         error?: string;
         detail?: string;
       };
@@ -68,10 +70,15 @@ export default function DocumentAnalyzerClient() {
         return;
       }
       setSessionId(data.sessionId);
+      const chunksNote =
+        typeof data.chunkCount === "number" ? ` (${data.chunkCount} text chunks)` : "";
+      const persistNote = data.persisted
+        ? " Chunks are also stored in Supabase so chat can resume after a server restart."
+        : "";
       setMessages([
         {
           role: "assistant",
-          content: `Indexed **${data.filename ?? file.name}** with LlamaIndex (vector store). Ask a question or use a quick action.`,
+          content: `Indexed **${data.filename ?? file.name}** with LlamaIndex (vector store)${chunksNote}.${persistNote} Ask a question or use a quick action.`,
         },
       ]);
     } catch {
@@ -150,6 +157,25 @@ export default function DocumentAnalyzerClient() {
     [input, sendChat]
   );
 
+  const lastAssistantReply = [...messages].reverse().find((m) => m.role === "assistant");
+  const canDownloadReply =
+    lastAssistantReply &&
+    messages.length > 1 &&
+    !lastAssistantReply.content.startsWith("Indexed **");
+
+  const downloadLastReply = useCallback(() => {
+    if (!lastAssistantReply || !canDownloadReply) return;
+    const blob = new Blob([lastAssistantReply.content], {
+      type: "text/markdown;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "document-analyzer-last-reply.md";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [lastAssistantReply, canDownloadReply]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100">
       <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-6 sm:px-6">
@@ -160,8 +186,9 @@ export default function DocumentAnalyzerClient() {
             </p>
             <h1 className="text-2xl font-semibold tracking-tight">Document analyzer</h1>
             <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-slate-400">
-              Split view: PDF on the left, LlamaIndex-grounded chat on the right. Sessions are kept in server
-              memory for up to about an hour (dev / single instance).
+              Split view: PDF on the left, grounded chat on the right. With Supabase configured, indexed
+              chunks are stored so chat can fall back after restarts; in-process LlamaIndex stays fastest when
+              the same server still holds your session.
             </p>
           </div>
           <Link
@@ -232,7 +259,17 @@ export default function DocumentAnalyzerClient() {
           </section>
 
           <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Chat</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Chat</h2>
+              <button
+                type="button"
+                onClick={downloadLastReply}
+                disabled={!canDownloadReply}
+                className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Download last reply (.md)
+              </button>
+            </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
