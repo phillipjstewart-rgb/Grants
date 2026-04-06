@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { chunkTextForEmbedding } from "@/lib/chunkText";
 import {
   defaultEmbeddingModel,
   embedText,
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
       const { error } = await upsertGrantOsEmbedding(admin, {
         sourceType: "grant_opportunity",
         sourceId: g.id,
+        chunkIndex: 0,
         content: text,
         embedding,
       });
@@ -111,19 +113,28 @@ export async function POST(request: Request) {
   for (const p of pdfs ?? []) {
     const key = `pdf_analysis:${p.id}`;
     if (embedded.has(key)) continue;
-    const text = p.summary ?? "";
-    if (!text.trim()) continue;
+    const summary = p.summary ?? "";
+    if (!summary.trim()) continue;
+    const chunks = chunkTextForEmbedding(summary);
+    if (chunks.length === 0) continue;
     try {
-      const embedding = await embedText(openaiKey, text, model);
-      const { error } = await upsertGrantOsEmbedding(admin, {
-        sourceType: "pdf_analysis",
-        sourceId: p.id,
-        content: text,
-        embedding,
-      });
-      if (error) {
-        errors.push(`pdf ${p.id}: ${error}`);
-      } else {
+      let chunkOk = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        const embedding = await embedText(openaiKey, chunks[i]!, model);
+        const { error } = await upsertGrantOsEmbedding(admin, {
+          sourceType: "pdf_analysis",
+          sourceId: p.id,
+          chunkIndex: i,
+          content: chunks[i]!,
+          embedding,
+        });
+        if (error) {
+          errors.push(`pdf ${p.id} chunk ${i}: ${error}`);
+        } else {
+          chunkOk += 1;
+        }
+      }
+      if (chunkOk > 0) {
         pdfsIndexed += 1;
         embedded.add(key);
       }
