@@ -9,6 +9,7 @@ Monorepo for a grant-capture platform: a **Next.js** desk app for PDF requiremen
 | `web/` | Next.js 15 + Tailwind 4 + LangChain + OpenAI + `pdf-parse` |
 | `python/` | Installable package (`grant-os`) with CLI entry points |
 | `data/` | Templates: `Company_Profile.md`, `Company_DNA.md`, `Voice_DNA.md`, `brand_config.json` |
+| `supabase/migrations/` | SQL for `grant_opportunities` + `pdf_analyses` (Supabase) |
 | `.github/workflows/` | Optional daily Firecrawl scrape → artifact |
 
 ## Quick start — web
@@ -21,7 +22,17 @@ npm install
 npm run dev
 ```
 
-Open the app, upload a text-based PDF, and call the summarization API.
+Open the app, upload a text-based PDF, and call the summarization API. With Supabase configured, summaries are stored in `pdf_analyses` and the UI can load opportunities from `GET /api/grants`.
+
+### Supabase
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. Run the SQL in `supabase/migrations/20260406000000_grant_os_core.sql` (SQL Editor, or `supabase db push` if you use the CLI).
+3. In `web/.env.local`, set:
+   - `NEXT_PUBLIC_SUPABASE_URL` — Project URL  
+   - `SUPABASE_SERVICE_ROLE_KEY` — **server-only**; never expose to the browser or commit to git  
+
+Optional: point scrapers or other backends at the same Supabase project using `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in a server-side `.env` (never commit keys).
 
 ## Quick start — Python
 
@@ -53,7 +64,11 @@ See `.env.example` at the repo root. The web app reads `OPENAI_API_KEY` from `we
 
 Configure `FIRECRAWL_API_KEY` in GitHub Actions secrets to enable `.github/workflows/daily-grant-scrape.yml`, or point a cron job at `grant-scrape`.
 
-## Next integrations (your blueprint)
+## Security
 
-- **Supabase / Pinecone:** persist `grants.json` and embeddings from PDFs for cross-opportunity search.
-- **Production PDF pipeline:** replace the LangGraph `pdf` stub node with a call to `grant-pdf` or a queue worker.
+- Never commit `.env`, `web/.env.local`, or keys. `SUPABASE_SERVICE_ROLE_KEY` bypasses Row Level Security—use only on the server (Next.js API routes, CI secrets, local tooling).
+
+## Roadmap / extensions
+
+- **Vector search:** add embeddings (e.g. OpenAI + `pgvector`) for cross-opportunity PDF search.
+- **Production PDF pipeline:** replace the LangGraph `pdf` stub node with a queue worker calling `grant-pdf`.
