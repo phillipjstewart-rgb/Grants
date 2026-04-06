@@ -29,10 +29,29 @@ def main_scrape() -> None:
         type=Path,
         default=_repo_root() / "python" / "output" / "grants.json",
     )
+    p.add_argument(
+        "--push-supabase",
+        action="store_true",
+        help="Upsert rows into Supabase grant_opportunities (needs SUPABASE_* env).",
+    )
+    p.add_argument(
+        "--embeddings-backfill",
+        action="store_true",
+        help="POST to GRANT_OS_APP_URL/api/embeddings/backfill after scrape (optional).",
+    )
     args = p.parse_args()
     rows = scrape_grants_portal(args.url)
     save_grants_json(rows, args.output)
     print(f"Wrote {len(rows)} records to {args.output}")
+    if args.push_supabase:
+        from grant_os.supabase_ingest import upsert_grant_rows
+
+        n = upsert_grant_rows(rows, args.url)
+        print(f"Supabase upsert: {n} rows")
+    if args.embeddings_backfill:
+        from grant_os.supabase_ingest import trigger_embeddings_backfill
+
+        trigger_embeddings_backfill()
 
 
 def main_llamaparse() -> None:
@@ -172,6 +191,40 @@ def main_pdf() -> None:
     print(f"Wrote {args.output}")
 
 
+def main_pdf_worker() -> None:
+    _load_env()
+    from grant_os.pdf_queue import run_pdf_queue
+
+    p = argparse.ArgumentParser(
+        description="Queue worker: render each *.json in a folder with ReportLab (grant-pdf)"
+    )
+    p.add_argument(
+        "queue_dir",
+        type=Path,
+        help="Directory containing proposal JSON jobs (*.json)",
+    )
+    p.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="PDF output directory (default: <queue_dir>/out)",
+    )
+    p.add_argument(
+        "--brand",
+        type=Path,
+        default=_repo_root() / "data" / "brand_config.json",
+    )
+    p.add_argument(
+        "--logo",
+        type=Path,
+        default=_repo_root() / "data" / "assets" / "company_logo.png",
+    )
+    args = p.parse_args()
+    logo = args.logo if args.logo.is_file() else None
+    n = run_pdf_queue(args.queue_dir, args.output_dir, args.brand, logo)
+    print(f"Processed {n} job(s)")
+
+
 def main_langgraph() -> None:
     _load_env()
     from grant_os.langgraph_pipeline import run_demo
@@ -192,7 +245,8 @@ def main_langgraph() -> None:
     if args.matrix:
         matrix = json.loads(args.matrix.read_text(encoding="utf-8"))
     out = run_demo(args.keywords, matrix)
-    print(json.dumps({k: v for k, v in out.items() if k != "proposal_draft"}, indent=2))
+    printable = {k: v for k, v in out.items() if k != "proposal_draft"}
+    print(json.dumps(printable, indent=2))
     draft = out.get("proposal_draft", "")
     print("\n--- DRAFT PREVIEW ---\n", draft[:1200], file=sys.stderr)
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import TypedDict
 
 import anthropic
@@ -20,6 +21,8 @@ class PipelineState(TypedDict, total=False):
     approval_score: float
     auditor_feedback: str
     iteration: int
+    pdf_path: str
+    pdf_error: str
 
 
 def _require_anthropic() -> anthropic.Anthropic:
@@ -92,9 +95,41 @@ def node_auditor(state: PipelineState) -> PipelineState:
     }
 
 
-def node_pdf_stub(state: PipelineState) -> PipelineState:
-    # Final artifact is produced by `grant-pdf` / ReportLab in production.
-    return state
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def node_grant_pdf(state: PipelineState) -> PipelineState:
+    """Render the draft through ReportLab (same path as `grant-pdf` CLI)."""
+    from grant_os.pdf_branded import generate_branded_proposal
+
+    draft = (state.get("proposal_draft") or "").strip()
+    repo = _repo_root()
+    out_dir = Path(
+        os.environ.get("GRANT_OS_OUTPUT_DIR", str(repo / "python" / "output"))
+    ).expanduser()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    brand = repo / "data" / "brand_config.json"
+    logo_path = repo / "data" / "assets" / "company_logo.png"
+    pdf_out = out_dir / "langgraph_proposal.pdf"
+
+    if not draft:
+        return {**state, "pdf_path": "", "pdf_error": "empty draft"}
+
+    payload = {
+        "title": "Technical response (LangGraph export)",
+        "sections": [{"header": "Proposal draft", "text": draft[:200_000]}],
+    }
+    try:
+        generate_branded_proposal(
+            pdf_out,
+            payload,
+            logo_path if logo_path.is_file() else None,
+            brand,
+        )
+        return {**state, "pdf_path": str(pdf_out.resolve()), "pdf_error": ""}
+    except Exception as exc:  # noqa: BLE001 — ReportLab / IO surface many types
+        return {**state, "pdf_path": "", "pdf_error": str(exc)}
 
 
 def supervisor(state: PipelineState) -> str:
@@ -110,7 +145,7 @@ def build_app():
     g.add_node("intel", node_usaspending)
     g.add_node("writer", node_writer)
     g.add_node("auditor", node_auditor)
-    g.add_node("pdf", node_pdf_stub)
+    g.add_node("pdf", node_grant_pdf)
     g.set_entry_point("intel")
     g.add_edge("intel", "writer")
     g.add_edge("writer", "auditor")
