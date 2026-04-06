@@ -1,0 +1,60 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: grant-os-web
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - GRANT_OS_APP_URL=${GRANT_OS_APP_URL:-http://localhost:3000}
+      - GRANT_OS_INTERNAL_KEY=${GRANT_OS_INTERNAL_KEY}
+      - SEARCH_API_KEY=${SEARCH_API_KEY}
+      - SEARCH_RATE_LIMIT_PER_MIN=${SEARCH_RATE_LIMIT_PER_MIN:-30}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+    volumes:
+      - ./web/src:/app/web/src
+      - ./python:/app/python
+      - ./data:/app/data
+      - node_modules:/app/node_modules
+    develop:
+      watch:
+        - path: ./web/src
+          action: rebuild
+        - path: ./web/package.json
+          action: rebuild
+    depends_on:
+      - supabase
+    networks:
+      - grant-os-network
+
+  supabase:
+    image: supabase/supabase:latest
+    container_name: grant-os-supabase
+    ports:
+      - "5432:5432"
+      - "8000:8000"
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - JWT_SECRET=${JWT_SECRET:-change-me-secret}
+      - JWT_EXPIRY=${JWT_EXPIRY:-3600}
+    volumes:
+      - supabase_data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - grant-os-network
+
+volumes:
+  supabase_data:
+  node_modules:
+
+networks:
+  grant-os-network:
+    driver: bridge
