@@ -33,6 +33,7 @@ grant-compliance = "grant_os.cli:main_compliance"
 grant-draft = "grant_os.cli:main_draft"
 grant-remediate = "grant_os.cli:main_remediate"
 grant-pdf = "grant_os.cli:main_pdf"
+grant-pdf-worker = "grant_os.cli:main_pdf_worker"
 grant-graph = "grant_os.cli:main_langgraph"
 
 [tool.setuptools.packages.find]
