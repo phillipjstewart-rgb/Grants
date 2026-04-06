@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Env & secrets
+.env
+.env.local
+.env.*.local
+web/.env.local
+
+# Build / cache
+.next/
+out/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / IDE
+.DS_Store
+*.log
+
+# Generated outputs (keep examples in data/examples/)
+python/output/
+*.pdf
+!data/assets/company_logo.png
