@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type ApiOk = {
   filename: string;
@@ -10,6 +10,25 @@ type ApiOk = {
 
 type ApiErr = { error: string };
 
+type GrantRow = {
+  id: string;
+  created_at: string;
+  source_url: string;
+  title: string;
+  agency: string;
+  eligibility: string[];
+  closing_date: string | null;
+  funding_amount: string | null;
+  high_priority: boolean;
+};
+
+type SearchHit = {
+  source_type: string;
+  source_id: string;
+  content: string;
+  similarity: number;
+};
+
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -18,6 +37,44 @@ export default function Home() {
     null
   );
   const [error, setError] = useState<string | null>(null);
+
+  const [grants, setGrants] = useState<GrantRow[]>([]);
+  const [grantsLoading, setGrantsLoading] = useState(true);
+  const [grantsError, setGrantsError] = useState<string | null>(null);
+
+  const [searchQ, setSearchQ] = useState("");
+  const [searchType, setSearchType] = useState<"all" | "grant_opportunity" | "pdf_analysis">("all");
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<SearchHit[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/grants?limit=50");
+        const data = (await res.json()) as { grants?: GrantRow[]; error?: string };
+        if (cancelled) return;
+        if (!res.ok) {
+          setGrantsError(data.error ?? "Could not load opportunities.");
+          setGrants([]);
+          return;
+        }
+        setGrantsError(null);
+        setGrants(data.grants ?? []);
+      } catch {
+        if (!cancelled) {
+          setGrantsError("Network error loading opportunities.");
+          setGrants([]);
+        }
+      } finally {
+        if (!cancelled) setGrantsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const onSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -50,6 +107,35 @@ export default function Home() {
     [file]
   );
 
+  const onSearch = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setSearchError(null);
+      setSearchResults(null);
+      const q = searchQ.trim();
+      if (!q) {
+        setSearchError("Enter a search phrase.");
+        return;
+      }
+      setSearchLoading(true);
+      try {
+        const params = new URLSearchParams({ q, limit: "12", type: searchType });
+        const res = await fetch(`/api/search?${params.toString()}`);
+        const data = (await res.json()) as { results?: SearchHit[]; error?: string };
+        if (!res.ok) {
+          setSearchError(data.error ?? "Search failed.");
+          return;
+        }
+        setSearchResults(data.results ?? []);
+      } catch {
+        setSearchError("Network error — try again.");
+      } finally {
+        setSearchLoading(false);
+      }
+    },
+    [searchQ, searchType]
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100">
       <div className="mx-auto flex max-w-5xl flex-col gap-10 px-6 py-14 sm:px-10">
@@ -66,6 +152,89 @@ export default function Home() {
             proposal desk.
           </p>
         </header>
+
+        <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/60">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+              Semantic search
+            </h2>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              Query across embedded grant opportunities and PDF requirement summaries (pgvector + OpenAI embeddings).
+            </p>
+          </div>
+          <form onSubmit={onSearch} className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="min-w-0 flex-1">
+              <label htmlFor="sem-q" className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                Search
+              </label>
+              <input
+                id="sem-q"
+                type="search"
+                value={searchQ}
+                onChange={(ev) => setSearchQ(ev.target.value)}
+                placeholder="e.g. cost share, SBIR Phase I, cybersecurity compliance"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100"
+              />
+            </div>
+            <div>
+              <label htmlFor="sem-type" className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                Scope
+              </label>
+              <select
+                id="sem-type"
+                value={searchType}
+                onChange={(ev) =>
+                  setSearchType(ev.target.value as "all" | "grant_opportunity" | "pdf_analysis")
+                }
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100 sm:w-48"
+              >
+                <option value="all">All indexed</option>
+                <option value="grant_opportunity">Opportunities only</option>
+                <option value="pdf_analysis">PDF summaries only</option>
+              </select>
+            </div>
+            <button
+              type="submit"
+              disabled={searchLoading}
+              className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
+            >
+              {searchLoading ? "Searching…" : "Search"}
+            </button>
+          </form>
+          {searchError ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+              {searchError}
+            </p>
+          ) : null}
+          {searchResults ? (
+            searchResults.length === 0 ? (
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                No matches. Index content with a PDF upload or run{" "}
+                <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-slate-800">POST /api/embeddings/backfill</code>{" "}
+                for existing rows (see README).
+              </p>
+            ) : (
+              <ul className="flex max-h-[28rem] flex-col gap-3 overflow-y-auto pr-1">
+                {searchResults.map((hit) => (
+                  <li
+                    key={`${hit.source_type}-${hit.source_id}`}
+                    className="rounded-xl border border-slate-200/90 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/40"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        {hit.source_type === "grant_opportunity" ? "Opportunity" : "PDF summary"}
+                      </span>
+                      <span>{(hit.similarity * 100).toFixed(1)}% match</span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-800 dark:text-slate-200">
+                      {hit.content.length > 900 ? `${hit.content.slice(0, 900)}…` : hit.content}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : null}
+        </section>
 
         <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
           <form
@@ -129,6 +298,102 @@ export default function Home() {
               </div>
             ) : null}
           </article>
+        </section>
+
+        <section className="flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/60">
+          <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200/80 pb-4 dark:border-slate-800">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+                Opportunity feed
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-slate-400">
+                Rows from Supabase <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-slate-800">grant_opportunities</code>
+                — populated by scrapers or manual inserts.
+              </p>
+            </div>
+          </div>
+
+          {grantsLoading ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">Loading opportunities…</p>
+          ) : grantsError ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+              {grantsError}
+            </p>
+          ) : grants.length === 0 ? (
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              No opportunities yet. Run <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-slate-800">grant-scrape</code>{" "}
+              from the Python toolkit or add rows in the Supabase SQL editor.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-4">
+              {grants.map((g) => (
+                <li
+                  key={g.id}
+                  className="rounded-xl border border-slate-200/90 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/40"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {g.high_priority ? (
+                          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800 dark:bg-rose-950/80 dark:text-rose-200">
+                            High priority
+                          </span>
+                        ) : null}
+                        <span className="text-xs text-slate-500 dark:text-slate-500">
+                          {new Date(g.created_at).toLocaleDateString(undefined, {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                      </div>
+                      <h3 className="mt-1 font-medium text-slate-900 dark:text-slate-100">{g.title}</h3>
+                      {g.agency ? (
+                        <p className="text-sm text-slate-600 dark:text-slate-400">{g.agency}</p>
+                      ) : null}
+                    </div>
+                    <a
+                      href={g.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-slate-600 dark:text-sky-400 dark:hover:bg-sky-950/40"
+                    >
+                      Source ↗
+                    </a>
+                  </div>
+                  <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                    {g.closing_date ? (
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Closes</dt>
+                        <dd className="text-slate-800 dark:text-slate-200">{g.closing_date}</dd>
+                      </div>
+                    ) : null}
+                    {g.funding_amount ? (
+                      <div>
+                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Funding</dt>
+                        <dd className="text-slate-800 dark:text-slate-200">{g.funding_amount}</dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                  {g.eligibility?.length ? (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {g.eligibility.slice(0, 6).map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                      {g.eligibility.length > 6 ? (
+                        <span className="text-xs text-slate-500">+{g.eligibility.length - 6} more</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </div>
     </div>

@@ -9,10 +9,21 @@ Monorepo for a grant-capture platform: a **Next.js** desk app for PDF requiremen
 | `web/` | Next.js 15 + Tailwind 4 + LangChain + OpenAI + `pdf-parse` |
 | `python/` | Installable package (`grant-os`) with CLI entry points |
 | `data/` | Templates: `Company_Profile.md`, `Company_DNA.md`, `Voice_DNA.md`, `brand_config.json` |
-| `supabase/migrations/` | SQL for `grant_opportunities` + `pdf_analyses` (Supabase) |
+| `supabase/migrations/` | SQL for `grant_opportunities`, `pdf_analyses`, `grant_os_embeddings` + pgvector |
 | `.github/workflows/` | Optional daily Firecrawl scrape → artifact |
 
 ## Quick start — web
+
+From the **repo root**, you can run the app without `cd web` (scripts delegate to `web/`):
+
+```bash
+cp web/.env.example web/.env.local
+# set OPENAI_API_KEY and optional Supabase vars (see below)
+npm install --prefix web
+npm run dev
+```
+
+Or work inside `web/`:
 
 ```bash
 cd web
@@ -22,7 +33,7 @@ npm install
 npm run dev
 ```
 
-Open the app, upload a text-based PDF, and call the summarization API. With Supabase configured, summaries are stored in `pdf_analyses` and the UI can load opportunities from `GET /api/grants`.
+Open the app: the home page lists opportunities from `grant_opportunities` (via `GET /api/grants`) and lets you upload a text-based PDF for requirement summarization. With Supabase configured, summaries are stored in `pdf_analyses`.
 
 ### Supabase
 
@@ -33,6 +44,15 @@ Open the app, upload a text-based PDF, and call the summarization API. With Supa
    - `SUPABASE_SERVICE_ROLE_KEY` — **server-only**; never expose to the browser or commit to git  
 
 Optional: point scrapers or other backends at the same Supabase project using `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in a server-side `.env` (never commit keys).
+
+### Semantic search (pgvector + OpenAI embeddings)
+
+1. Apply the migration `supabase/migrations/20260406150000_grant_os_pgvector_embeddings.sql` (after the core migration) via SQL Editor or `supabase db push`.
+2. Each successful PDF summarization upserts an embedding for that row (`pdf_analysis`). Grant rows from scrapers are indexed when you run a backfill.
+3. **Backfill** existing rows: `POST /api/embeddings/backfill` (same origin as the app). If `GRANT_OS_INTERNAL_KEY` is set in `web/.env.local`, send header `x-grant-os-key: <value>`.
+4. **Search**: the home page includes a semantic search box, or call `GET /api/search?q=...&limit=10&type=all` (`type` can be `grant_opportunity`, `pdf_analysis`, or `all`). Uses `text-embedding-3-small` (1536 dimensions) unless you override `OPENAI_EMBEDDING_MODEL` (keep dimensions aligned with the migration).
+
+Search calls OpenAI on every request; protect or rate-limit if you expose the app publicly.
 
 ## Quick start — Python
 
@@ -70,5 +90,5 @@ Configure `FIRECRAWL_API_KEY` in GitHub Actions secrets to enable `.github/workf
 
 ## Roadmap / extensions
 
-- **Vector search:** add embeddings (e.g. OpenAI + `pgvector`) for cross-opportunity PDF search.
+- **Chunked PDF embeddings:** split long solicitations into chunks with multiple vectors per analysis.
 - **Production PDF pipeline:** replace the LangGraph `pdf` stub node with a queue worker calling `grant-pdf`.

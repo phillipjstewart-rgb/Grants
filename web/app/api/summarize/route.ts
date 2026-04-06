@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import {
+  defaultEmbeddingModel,
+  embedText,
+  upsertGrantOsEmbedding,
+} from "@/lib/grantOsEmbeddings";
 import { extractTextFromPdf } from "@/lib/extractPdfText";
 import { summarizeGrantRequirementsFromText } from "@/lib/summarizeGrantRequirements";
 import { getSupabaseAdmin } from "@/lib/supabase/serverAdmin";
@@ -78,13 +83,32 @@ export async function POST(request: Request) {
 
     const admin = getSupabaseAdmin();
     if (admin) {
-      const { error: dbError } = await admin.from("pdf_analyses").insert({
-        filename: upload.name,
-        extracted_chars: text.length,
-        summary,
-      });
+      const { data: inserted, error: dbError } = await admin
+        .from("pdf_analyses")
+        .insert({
+          filename: upload.name,
+          extracted_chars: text.length,
+          summary,
+        })
+        .select("id")
+        .single();
       if (dbError) {
         console.error("[supabase] pdf_analyses insert failed:", dbError.message);
+      } else if (inserted?.id) {
+        try {
+          const embedding = await embedText(key, summary, defaultEmbeddingModel());
+          const { error: embError } = await upsertGrantOsEmbedding(admin, {
+            sourceType: "pdf_analysis",
+            sourceId: inserted.id,
+            content: summary,
+            embedding,
+          });
+          if (embError) {
+            console.error("[supabase] grant_os_embeddings upsert failed:", embError);
+          }
+        } catch (e) {
+          console.error("[embeddings] pdf_analysis:", e instanceof Error ? e.message : e);
+        }
       }
     }
 
