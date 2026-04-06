@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { loadLetterheadContext } from "@/lib/documentAnalyzer/letterheadContext";
+import { engineResponseToSources } from "@/lib/documentAnalyzer/llamaSources";
 import { answerWithPgvectorContext } from "@/lib/documentAnalyzer/ragFromSupabase";
 import { getAnalyzerIndex, touchSession } from "@/lib/documentAnalyzer/sessionStore";
 import { sessionExistsInDb } from "@/lib/documentAnalyzer/persistToSupabase";
@@ -94,15 +95,22 @@ export async function POST(request: Request) {
         model: "text-embedding-3-small",
       });
 
-      const reply = await Settings.withLLM(llm, () =>
+      const { reply, sources } = await Settings.withLLM(llm, () =>
         Settings.withEmbedModel(embedModel, async () => {
           const engine = index.asQueryEngine({ similarityTopK: 8 });
           const res = await engine.query({ query: queryText });
-          return res.toString();
+          return {
+            reply: res.response,
+            sources: engineResponseToSources(res),
+          };
         })
       );
 
-      return NextResponse.json({ reply, source: "llamaindex_memory" as const });
+      return NextResponse.json({
+        reply,
+        sources,
+        source: "llamaindex_memory" as const,
+      });
     } catch (e) {
       console.error("[document-analyzer/chat] llamaindex", e);
       /* fall through to Supabase RAG if possible */
@@ -110,7 +118,7 @@ export async function POST(request: Request) {
   }
 
   if (admin && (await sessionExistsInDb(admin, sessionId))) {
-    const { text, error } = await answerWithPgvectorContext(admin, {
+    const { text, error, sources } = await answerWithPgvectorContext(admin, {
       sessionId,
       apiKey,
       userPrompt: queryText,
@@ -119,7 +127,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error, detail: error }, { status: 500 });
     }
     if (text) {
-      return NextResponse.json({ reply: text, source: "supabase_pgvector" as const });
+      return NextResponse.json({
+        reply: text,
+        sources,
+        source: "supabase_pgvector" as const,
+      });
     }
   }
 

@@ -7,6 +7,8 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
+import type { AnalyzerChatSource } from "@/types/documentAnalyzer";
+
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 type ChatRole = "user" | "assistant";
@@ -14,6 +16,7 @@ type ChatRole = "user" | "assistant";
 type ChatMessage = {
   role: ChatRole;
   content: string;
+  sources?: AnalyzerChatSource[];
 };
 
 export default function DocumentAnalyzerClient() {
@@ -131,7 +134,12 @@ export default function DocumentAnalyzerClient() {
             history: historyPayload,
           }),
         });
-        const data = (await res.json()) as { reply?: string; error?: string; detail?: string };
+        const data = (await res.json()) as {
+          reply?: string;
+          sources?: AnalyzerChatSource[];
+          error?: string;
+          detail?: string;
+        };
         if (!res.ok) {
           setMessages((m) => [
             ...m,
@@ -139,7 +147,14 @@ export default function DocumentAnalyzerClient() {
           ]);
           return;
         }
-        setMessages((m) => [...m, { role: "assistant", content: data.reply ?? "(empty reply)" }]);
+        setMessages((m) => [
+          ...m,
+          {
+            role: "assistant",
+            content: data.reply ?? "(empty reply)",
+            sources: data.sources,
+          },
+        ]);
       } catch {
         setMessages((m) => [...m, { role: "assistant", content: "Network error — try again." }]);
       } finally {
@@ -318,6 +333,29 @@ export default function DocumentAnalyzerClient() {
                     <pre className="mt-1 whitespace-pre-wrap font-sans text-slate-800 dark:text-slate-100">
                       {m.content}
                     </pre>
+                    {m.role === "assistant" && m.sources && m.sources.length > 0 ? (
+                      <details className="mt-2 border-t border-slate-200 pt-2 dark:border-slate-600">
+                        <summary className="cursor-pointer text-xs font-medium text-slate-600 dark:text-slate-400">
+                          Sources ({m.sources.length})
+                        </summary>
+                        <ol className="mt-2 list-decimal space-y-2 pl-4 text-xs text-slate-600 dark:text-slate-400">
+                          {m.sources.map((s, j) => (
+                            <li key={j}>
+                              <span className="text-slate-500">
+                                {s.kind === "pgvector" ? "Database" : "In-memory index"}
+                                {typeof s.score === "number"
+                                  ? ` · score ${s.score.toFixed(3)}`
+                                  : ""}
+                                {typeof s.chunkIndex === "number" ? ` · chunk ${s.chunkIndex}` : ""}
+                              </span>
+                              <pre className="mt-1 whitespace-pre-wrap font-sans text-slate-700 dark:text-slate-300">
+                                {s.excerpt}
+                              </pre>
+                            </li>
+                          ))}
+                        </ol>
+                      </details>
+                    ) : null}
                   </div>
                 ))
               )}
