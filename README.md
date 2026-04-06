@@ -35,6 +35,8 @@ npm run dev
 
 Open the app: the home page lists opportunities from `grant_opportunities` (via `GET /api/grants`), semantic search, and PDF upload for requirement summarization. With Supabase configured, summaries are stored in `pdf_analyses`.
 
+**Document analyzer** (`/tools/document-analyzer`): split-screen PDF viewer + chat. After upload, the server builds a **LlamaIndex.TS** [`VectorStoreIndex`](https://ts.llamaindex.ai/) over extracted text (OpenAI `gpt-4o-mini` + `text-embedding-3-small`). Quick actions cover summary, requirements, and a draft response letter using `data/brand_config.json` + `Company_DNA.md`. Indexes are held in **process memory** (TTL ~1 hour; not suitable for multi-instance production without a shared vector store).
+
 ### Supabase
 
 1. Create a project at [supabase.com](https://supabase.com).
