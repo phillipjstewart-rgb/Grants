@@ -14,11 +14,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  if (!authorizeInternalRequest(request)) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
+  try {
+    if (!authorizeInternalRequest(request)) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
 
-  const openaiKey = process.env.OPENAI_API_KEY;
+    const openaiKey = process.env.OPENAI_API_KEY?.trim();
   if (!openaiKey) {
     return NextResponse.json(
       { error: "OPENAI_API_KEY is not configured on the server." },
@@ -143,10 +144,18 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({
-    model,
-    grantsIndexed,
-    pdfsIndexed,
-    errors: errors.length ? errors : undefined,
-  });
+    return NextResponse.json({
+      model,
+      grantsIndexed,
+      pdfsIndexed,
+      errors: errors.length ? errors : undefined,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[api/embeddings/backfill]", e);
+    return NextResponse.json(
+      { error: "Backfill failed.", detail: message },
+      { status: 500 }
+    );
+  }
 }

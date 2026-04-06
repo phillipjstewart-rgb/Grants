@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 
 import { semanticSearchAction } from "@/app/actions/semanticSearch";
 import type { SemanticSearchHit } from "@/types/semanticSearch";
@@ -134,9 +135,17 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100">
       <div className="mx-auto flex max-w-5xl flex-col gap-10 px-6 py-14 sm:px-10">
         <header className="flex flex-col gap-4 border-b border-slate-200/80 pb-10 dark:border-slate-800">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700 dark:text-sky-400">
-            Grant OS
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700 dark:text-sky-400">
+              Grant OS
+            </p>
+            <Link
+              href="/tools/document-analyzer"
+              className="text-sm font-medium text-sky-700 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-300"
+            >
+              Document analyzer →
+            </Link>
+          </div>
           <h1 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
             Proposal requirement intelligence
           </h1>

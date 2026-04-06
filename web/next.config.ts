@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
+  transpilePackages: ["llamaindex", "@llamaindex/openai", "@llamaindex/core", "@llamaindex/env"],
   serverExternalPackages: ["pdf-parse"],
   // Avoid picking up an unrelated lockfile higher in the home directory tree.
   outputFileTracingRoot: path.join(__dirname),
