@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { loadLetterheadContext } from "@/lib/documentAnalyzer/letterheadContext";
+import { answerWithPgvectorContext } from "@/lib/documentAnalyzer/ragFromSupabase";
 import { getAnalyzerIndex, touchSession } from "@/lib/documentAnalyzer/sessionStore";
+import { sessionExistsInDb } from "@/lib/documentAnalyzer/persistToSupabase";
+import { getSupabaseAdmin } from "@/lib/supabase/serverAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,15 +52,6 @@ export async function POST(request: Request) {
   }
 
   const { sessionId, message, history, quickAction } = parsed.data;
-  const index = getAnalyzerIndex(sessionId);
-  if (!index) {
-    return NextResponse.json(
-      { error: "Session expired or unknown. Upload the PDF again." },
-      { status: 404 }
-    );
-  }
-
-  touchSession(sessionId);
 
   let actionPreamble = "";
   if (quickAction === "about") {
@@ -81,35 +75,59 @@ export async function POST(request: Request) {
   const userLine = message.trim() ? `User question or notes:\n${message.trim()}` : "Proceed with the task above.";
   const queryText = `${actionPreamble}${historyBlock}${userLine}`;
 
-  try {
-    const { Settings } = await import("llamaindex");
-    const { OpenAI, OpenAIEmbedding } = await import("@llamaindex/openai");
+  const index = getAnalyzerIndex(sessionId);
+  const admin = getSupabaseAdmin();
 
-    const llm = new OpenAI({
-      apiKey,
-      model: "gpt-4o-mini",
-      temperature: 0.25,
-    });
-    const embedModel = new OpenAIEmbedding({
-      apiKey,
-      model: "text-embedding-3-small",
-    });
+  if (index) {
+    touchSession(sessionId);
+    try {
+      const { Settings } = await import("llamaindex");
+      const { OpenAI, OpenAIEmbedding } = await import("@llamaindex/openai");
 
-    const reply = await Settings.withLLM(llm, () =>
-      Settings.withEmbedModel(embedModel, async () => {
-        const engine = index.asQueryEngine({ similarityTopK: 8 });
-        const res = await engine.query({ query: queryText });
-        return res.toString();
-      })
-    );
+      const llm = new OpenAI({
+        apiKey,
+        model: "gpt-4o-mini",
+        temperature: 0.25,
+      });
+      const embedModel = new OpenAIEmbedding({
+        apiKey,
+        model: "text-embedding-3-small",
+      });
 
-    return NextResponse.json({ reply });
-  } catch (e) {
-    console.error("[document-analyzer/chat]", e);
-    const messageText = e instanceof Error ? e.message : String(e);
-    return NextResponse.json(
-      { error: "Chat query failed.", detail: messageText },
-      { status: 500 }
-    );
+      const reply = await Settings.withLLM(llm, () =>
+        Settings.withEmbedModel(embedModel, async () => {
+          const engine = index.asQueryEngine({ similarityTopK: 8 });
+          const res = await engine.query({ query: queryText });
+          return res.toString();
+        })
+      );
+
+      return NextResponse.json({ reply, source: "llamaindex_memory" as const });
+    } catch (e) {
+      console.error("[document-analyzer/chat] llamaindex", e);
+      /* fall through to Supabase RAG if possible */
+    }
   }
+
+  if (admin && (await sessionExistsInDb(admin, sessionId))) {
+    const { text, error } = await answerWithPgvectorContext(admin, {
+      sessionId,
+      apiKey,
+      userPrompt: queryText,
+    });
+    if (error) {
+      return NextResponse.json({ error, detail: error }, { status: 500 });
+    }
+    if (text) {
+      return NextResponse.json({ reply: text, source: "supabase_pgvector" as const });
+    }
+  }
+
+  return NextResponse.json(
+    {
+      error:
+        "Session expired or unknown. Upload the PDF again. If Supabase is configured, apply migration 20260406210000_document_analyzer_storage.sql so chats survive restarts.",
+    },
+    { status: 404 }
+  );
 }
