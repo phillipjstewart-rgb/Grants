@@ -35,7 +35,7 @@ npm run dev
 
 Open the app: the home page lists opportunities from `grant_opportunities` (via `GET /api/grants`), semantic search, and PDF upload for requirement summarization. With Supabase configured, summaries are stored in `pdf_analyses`.
 
-**Document analyzer** (`/tools/document-analyzer`): split-screen PDF viewer + chat. After upload, the server builds a **LlamaIndex.TS** [`VectorStoreIndex`](https://ts.llamaindex.ai/) over extracted text (OpenAI `gpt-4o-mini` + `text-embedding-3-small`). Quick actions cover summary, requirements, and a draft response letter using `data/brand_config.json` + `Company_DNA.md`. Indexes are held in **process memory** (TTL ~1 hour; not suitable for multi-instance production without a shared vector store).
+**Document analyzer** (`/tools/document-analyzer`): split-screen PDF viewer + chat. After upload, the server extracts text (shared pipeline with the home PDF flow), **embeds chunks**, and optionally **persists them to Supabase** (`document_analyzer_*` tables) when `SUPABASE_SERVICE_ROLE_KEY` is set. It also builds a **LlamaIndex.TS** [`VectorStoreIndex`](https://ts.llamaindex.ai/) in memory for fast queries. If the in-memory index is gone (restart, another instance), chat falls back to **pgvector retrieval + OpenAI** using the stored chunks. Quick actions cover summary, requirements, and a draft response letter using `data/brand_config.json` + `Company_DNA.md`.
 
 ### Supabase
 
@@ -44,6 +44,7 @@ Open the app: the home page lists opportunities from `grant_opportunities` (via 
    - `20260406000000_grant_os_core.sql`
    - `20260406150000_grant_os_pgvector_embeddings.sql`
    - `20260406200000_grant_os_embedding_chunks.sql` (multiple chunks per PDF / source)
+   - `20260406210000_document_analyzer_storage.sql` (document analyzer sessions + chunk vectors + `match_analyzer_chunks` RPC)
 3. In `web/.env.local`, set:
    - `NEXT_PUBLIC_SUPABASE_URL` — Project URL  
    - `SUPABASE_SERVICE_ROLE_KEY` — **server-only**; never expose to the browser or commit to git  
