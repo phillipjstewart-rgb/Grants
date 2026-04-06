@@ -259,7 +259,17 @@ export default function DocumentAnalyzerClient() {
           </section>
 
           <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Chat</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Chat</h2>
+              <button
+                type="button"
+                onClick={downloadLastReply}
+                disabled={!canDownloadReply}
+                className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Download last reply (.md)
+              </button>
+            </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
