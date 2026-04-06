@@ -79,6 +79,7 @@ def trigger_embeddings_backfill() -> None:
         with httpx.Client(timeout=600.0) as client:
             resp = client.post(f"{app_url}/api/embeddings/backfill", headers=headers)
             resp.raise_for_status()
-        print("Embeddings backfill OK:", resp.text[:500], file=sys.stderr)
+            snippet = resp.text[:500] if resp.text else "(empty body)"
+        print("Embeddings backfill OK:", snippet, file=sys.stderr)
     except httpx.HTTPError as exc:
         print("Embeddings backfill failed:", exc, file=sys.stderr)
