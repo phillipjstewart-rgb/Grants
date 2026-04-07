@@ -45,9 +45,13 @@ Open the app: the home page lists opportunities from `grant_opportunities` (via 
    - `20260406150000_grant_os_pgvector_embeddings.sql`
    - `20260406200000_grant_os_embedding_chunks.sql` (multiple chunks per PDF / source)
    - `20260406210000_document_analyzer_storage.sql` (document analyzer sessions + chunk vectors + `match_analyzer_chunks` RPC)
+   - `20260406220000_match_analyzer_chunks_citations.sql` (RPC returns `chunk_index` for citation UI)
 3. In `web/.env.local`, set:
    - `NEXT_PUBLIC_SUPABASE_URL` — Project URL  
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — **anon** key (public); used for session refresh middleware and **Sign in** (magic link). Enforce access with RLS on your tables.
    - `SUPABASE_SERVICE_ROLE_KEY` — **server-only**; never expose to the browser or commit to git  
+
+For magic link login, add redirect URLs in Supabase → Authentication → URL configuration (e.g. `http://localhost:3000/auth/callback` for local dev).
 
 Optional: for Python PostgREST upserts, set `SUPABASE_URL` (or reuse `NEXT_PUBLIC_SUPABASE_URL`) and `SUPABASE_SERVICE_ROLE_KEY` in the repo root `.env`.
 
@@ -96,9 +100,19 @@ See `.env.example` at the repo root and `web/.env.example`. The web app reads se
 | `GRANT_OS_APP_URL` | Base URL of the deployed Next app (for `--embeddings-backfill`) |
 | `GRANT_OS_INTERNAL_KEY` | Shared secret; `x-grant-os-key` on backfill (web + Python) |
 
+## Grant data ingestion (scraper: keep or drop?)
+
+**Keep it**, but treat **`grant-scrape` + Firecrawl** as a **convenient optional pipeline**, not your only source of truth:
+
+- **Pros:** quick demos, fills `grant_opportunities` without building a full integration, pairs with `--push-supabase` and embeddings backfill; the daily workflow uploads **artifacts** you can inspect when something breaks.
+- **Cons:** scraping a live portal is **fragile** (markup changes, rate limits, cost per run) and may not match official field semantics. For a serious production feed, plan on **official APIs or bulk exports** (e.g. Grants.gov / SAM.gov–style programmatic access) and use this stack as **one adapter** among several.
+
+So: **do not delete** the scraper unless you replace it with another automated ingest path; **do** document that it is best-effort and consider turning the schedule **off** or running **workflow_dispatch** only until you trust cost and quality.
+
 ## Scheduling
 
-- **GitHub Actions:** `.github/workflows/daily-grant-scrape.yml` — set `FIRECRAWL_API_KEY`. If `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set, the workflow also runs **`--push-supabase --embeddings-backfill`** in the same scrape step (set `GRANT_OS_APP_URL` + `GRANT_OS_INTERNAL_KEY` so the app can index new rows).
+- **GitHub Actions — CI:** `.github/workflows/ci.yml` runs **web** `lint` + `build` on push/PR (placeholder `OPENAI_API_KEY` so the build does not require secrets).
+- **GitHub Actions — daily scrape:** `.github/workflows/daily-grant-scrape.yml` — set `FIRECRAWL_API_KEY`. If `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set, the workflow also runs **`--push-supabase --embeddings-backfill`** in the same scrape step (set `GRANT_OS_APP_URL` + `GRANT_OS_INTERNAL_KEY` so the app can index new rows).
 - **Cron:** you can run `grant-scrape` locally or on a host with the same flags.
 
 ## Security

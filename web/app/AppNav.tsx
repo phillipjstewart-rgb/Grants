@@ -19,6 +19,9 @@ export default function AppNav() {
         <Link href="/tools/document-analyzer" className={linkClass}>
           Document analyzer
         </Link>
+        <Link href="/login" className={linkClass}>
+          Sign in
+        </Link>
       </div>
     </nav>
   );
