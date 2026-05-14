@@ -1,0 +1,22 @@
+title = "Grant OS gitleaks config"
+
+# Keep this minimal. The goal is to catch real keys in commits/PRs.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow known non-secrets (examples/docs)"
+paths = [
+  '''^\.env\.example$''',
+  '''^web/\.env\.example$''',
+  '''^README\.md$''',
+  '''^python/README\.md$'''
+]
+
+# Sometimes sample placeholders look like tokens. Allow obvious placeholders.
+regexes = [
+  '''sk-ci-placeholder-for-build-only''',
+  '''https://YOUR_PROJECT_REF\.supabase\.co'''
+]
+

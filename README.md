@@ -120,6 +120,15 @@ So: **do not delete** the scraper unless you replace it with another automated i
 - Never commit `.env`, `web/.env.local`, or keys. `SUPABASE_SERVICE_ROLE_KEY` bypasses Row Level Security—use only on the server (Next.js API routes, CI secrets, local tooling).
 - Treat `SEARCH_API_KEY` and `GRANT_OS_INTERNAL_KEY` like production secrets when enabled.
 
+### Secret scanning (recommended)
+
+- **CI:** `.github/workflows/secret-scan.yml` runs **gitleaks** on every push/PR.
+- **Local:** install gitleaks (e.g. `brew install gitleaks`) and run:
+
+```bash
+./scripts/scan-secrets.sh
+```
+
 ## Roadmap / extensions
 
 - **Finer chunking:** token-based splits (tiktoken) and metadata filters in RPC.
